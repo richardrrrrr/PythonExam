@@ -47,3 +47,11 @@ def season_to_year_quarter(season: str) ->Tuple[str, int]:
         raise ValueError(f"Invalid season: {season}")
     year, quarter = season.split("S", 1)
     return year, int(quarter)
+
+def build_file_name(city: str, trade_type: str) -> str:
+    if not isinstance(city, str):
+        raise TypeError(f"city must be a str, got {type(city).__name__}")
+    if not isinstance(trade_type, str):
+        raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
+    
+    return f"{city}_lvr_land_{trade_type}"
