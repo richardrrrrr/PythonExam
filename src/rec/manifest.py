@@ -55,3 +55,15 @@ def build_file_name(city: str, trade_type: str) -> str:
         raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
     
     return f"{city}_lvr_land_{trade_type}"
+
+def build_df_name(year: str, quarter: str, city: str, trade_type: str) -> str:
+    if not isinstance(year, str):
+        raise TypeError(f"year must be a str, got {type(year).__name__}")
+    if not isinstance(quarter, str):
+        raise TypeError(f"quarter must be a str, got {type(quarter).__name__}")
+    if not isinstance(city, str):
+        raise TypeError(f"city must be a str, got {type(city).__name__}")
+    if not isinstance(trade_type, str):
+        raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
+    
+    return f"{year}_{quarter}_{city}_{trade_type}"

@@ -1,6 +1,6 @@
 import pytest
 from rec import config
-from rec.manifest import (season_to_year_quarter, build_file_name)
+from rec.manifest import (season_to_year_quarter, build_file_name,build_df_name)
 
 def test_season_to_year_quarter():
     assert season_to_year_quarter("106S1") == ("106", 1)
@@ -19,8 +19,26 @@ def test_build_file_name():
 
     with pytest.raises(TypeError) as exc_info:
         build_file_name(123, "B")
-    assert "city must be a str" in str(exc_info.value)
-
+    assert "city must be a str, got int" in str(exc_info.value)
     with pytest.raises(TypeError) as exc_info:
         build_file_name("Taipei", None)
-    assert "trade_type must be a str" in str(exc_info.value)
+    assert "trade_type must be a str, got NoneType" in str(exc_info.value)
+
+def test_build_df_name():
+    assert build_df_name("123", "7", "C", "W") == "123_7_C_W"
+
+    with pytest.raises(TypeError) as exc_info:
+        build_df_name(123, "7", "C", "W") 
+    assert "year must be a str, got int" in str(exc_info.value)
+    
+    with pytest.raises(TypeError) as exc_info:
+        build_df_name("123", 1, "C", "W")  
+    assert "quarter must be a str, got int" in str(exc_info.value)
+    
+    with pytest.raises(TypeError) as exc_info:
+        build_df_name("123", "7", None, "W")  
+    assert "city must be a str, got NoneType" in str(exc_info.value)
+    
+    with pytest.raises(TypeError) as exc_info:
+        build_df_name("123", "7", "C", [])  
+    assert "trade_type must be a str, got list" in str(exc_info.value)
