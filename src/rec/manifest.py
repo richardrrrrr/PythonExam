@@ -3,7 +3,7 @@ manifest.py
 -----------
 產生「任務清單（manifest）」的工具模組。
 
-本模組依據題目規則，組合季別、交易類型、城市等條件，
+本模組依據組合季別、交易類型、城市等條件，
 自動生成一份包含所有待處理檔案資訊的清單（list of dict）。
 
 每筆任務包含：
@@ -39,14 +39,27 @@ from . import config
 CITIES_FOR_A = ["臺北市", "新北市", "高雄市"]
 CITIES_FOR_B = ["桃園市", "臺中市"]
 
-def season_to_year_quarter(season: str) ->Tuple[str, int]:
+def season_to_year_quarter(season: str) -> tuple[str, int]:
     """
     將 '106S1' -> ('106', 1)
     """
     if "S" not in season:
         raise ValueError(f"Invalid season: {season}")
-    year, quarter = season.split("S", 1)
-    return year, int(quarter)
+
+    year_str, quarter_str = season.split("S", 1)
+
+    year = int(year_str)
+    quarter = int(quarter_str)
+
+    if not (103 <= year <= 108):
+        raise ValueError(f"Invalid year: {year}")
+    if not (1 <= quarter <= 4):
+        raise ValueError(f"Invalid quarter: {quarter}")
+    if year == 108 and quarter not in (1, 2):
+        raise ValueError(f"Invalid quarter {quarter} for year 108")
+
+    return str(year), quarter
+
 
 def build_file_name(city: str, trade_type: str) -> str:
     if not isinstance(city, str):
@@ -56,14 +69,84 @@ def build_file_name(city: str, trade_type: str) -> str:
     
     return f"{city}_lvr_land_{trade_type}"
 
-def build_df_name(year: str, quarter: str, city: str, trade_type: str) -> str:
+def build_df_name(year: str, quarter: int, city: str, trade_type: str) -> str:
     if not isinstance(year, str):
         raise TypeError(f"year must be a str, got {type(year).__name__}")
-    if not isinstance(quarter, str):
-        raise TypeError(f"quarter must be a str, got {type(quarter).__name__}")
+    if not isinstance(quarter, int):
+        raise TypeError(f"quarter must be a int, got {type(quarter).__name__}")
     if not isinstance(city, str):
         raise TypeError(f"city must be a str, got {type(city).__name__}")
     if not isinstance(trade_type, str):
         raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
     
     return f"{year}_{quarter}_{city}_{trade_type}"
+
+def _cities_for_trade(trade_type: str) -> List[str]:
+    if not isinstance(trade_type, str):
+        raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
+    
+    if trade_type == "不動產買賣":
+        return CITIES_FOR_A
+    if trade_type == "預售屋買賣":
+        return CITIES_FOR_B
+    
+def generate_tasks(
+    seasons: Optional[Iterable[str]] = None,
+    include_cities: Optional[Iterable[str]] = None,
+    include_trade_types: Optional[Iterable[str]] = None,
+) -> List[Dict]:
+    """
+    依題目需求，產生要下載的目標清單（只列 X_lvr_land_X 主檔）。
+    每筆包含：
+      - season, year, quarter
+      - city_name, city_code
+      - trade_type_name, trade_code
+      - file_name (X_lvr_land_X.csv)
+      - df_name   (年_季_市碼_類別碼)
+    """
+    seasons = list(seasons) if seasons is not None else list(config.SEASONS)
+
+
+    
+    trade_types = ["不動產買賣", "預售屋買賣"]
+    if include_trade_types:
+        # 交集過濾
+        #[表達式 for 變數 in 可迭代物件 if 條件]
+        trade_types = [t for t in trade_types if t in set(include_trade_types)]
+        if not trade_types:
+            raise ValueError(f"[Warning] Invalid trade type: {trade_types}")
+
+    tasks: List[Dict] = []
+
+    for season in seasons:
+        year, quarter = season_to_year_quarter(season)
+
+        for trade_type_name in trade_types:
+            trade_code = config.TRADE_TYPE[trade_type_name]
+            # 依類型選城市
+            candidate_cities = _cities_for_trade(trade_type_name)
+
+            if include_cities:
+                city_set = set(include_cities)
+                candidate_cities = [c for c in candidate_cities if c in city_set]
+                if not candidate_cities:
+                    raise ValueError(f"No valid cities found for trade type: {include_cities}")
+
+            for city_name in candidate_cities:
+                city_code = config.CITIES[city_name]
+                file_name = build_file_name(city_code, trade_code)
+                df_name = build_df_name(year, quarter, city_code, trade_code)
+
+                tasks.append({
+                    "season": season,
+                    "year": year,
+                    "quarter": quarter,
+                    "city_name": city_name,
+                    "city_code": city_code,
+                    "trade_type_name": trade_type_name,
+                    "trade_code": trade_code,
+                    "file_name": file_name,
+                    "df_name": df_name,
+                })
+    tasks.sort(key=lambda t: (t["season"], t["trade_code"], t["city_code"]))
+    return tasks
