@@ -12,7 +12,7 @@ OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "output")
 
 BASE_URL: str = os.getenv(
     "BASE_URL",
-    "https://plvr.land.moi.gov.tw/DownloadOpenData"
+    "https://plvr.land.moi.gov.tw/DownloadSeason"
 )
 
 CITIES: dict[str, str] = {
