@@ -67,7 +67,7 @@ def build_file_name(city: str, trade_type: str) -> str:
     if not isinstance(trade_type, str):
         raise TypeError(f"trade_type must be a str, got {type(trade_type).__name__}")
     
-    return f"{city}_lvr_land_{trade_type}"
+    return f"{city}_lvr_land_{trade_type}.csv"
 
 def build_df_name(year: str, quarter: int, city: str, trade_type: str) -> str:
     if not isinstance(year, str):
