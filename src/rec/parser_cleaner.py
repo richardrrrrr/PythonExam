@@ -112,7 +112,7 @@ def read_csv_file(path: str,df_name: str) -> pd.DataFrame:
         if col in df.columns:
             # str.replace 預設 regex=True → 把模式當正則表達式解析
             # 這裡加 regex=False 是明確指定「單純字串替換」，避免 "." "*" 等符號被誤解
-            # 最後用 pd.to_numeric 嘗試轉換為數值，轉換失敗則設為 NaN (errors="coerce")
+            # 最後用 pd.to_numeric 嘗試轉換為數值，(errors="coerce")代表轉換失敗則回傳 NaN 
             df[col] = pd.to_numeric(df[col].str.replace(",", "", regex=False), errors="coerce")
 
     # 樓層數字化
