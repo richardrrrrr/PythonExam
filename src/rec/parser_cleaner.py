@@ -1,125 +1,144 @@
 from __future__ import annotations
 import os, io, re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import pandas as pd
+import numpy as np
 
-NEEDED_CN = ["主要用途", "建物型態", "總樓層數", "總價元", "車位總價元", "交易筆棟數"]
+# 只定義真正需要的欄位
+REQUIRED_FIELDS = {
+    "主要用途": "str",      # 篩選條件
+    "建物型態": "str",      # 篩選條件  
+    "總樓層數": "str",      # 需要轉換為數值
+    "總價元": "float",      # 統計用
+    "車位總價元": "float",  # 統計用
+    "交易筆棟數": "float"   # 統計用
+}
 
 def _read_csv_with_utf8(path: str) -> pd.DataFrame:
     """讀取 CSV（固定使用 UTF-8 編碼）"""
-    # 讀取 CSV 檔案並轉換成 DataFrame
-    # - header=None ：不把第一列當作欄位名稱（因為第1列中文，第2列英文，要自行處理）
-    # - dtype=str   ：所有資料先讀成字串，避免中文數字/混合格式造成型別錯誤
-    # - encoding="utf-8" ：確保中文能正確解碼，不會出現亂碼
     return pd.read_csv(path, header=None, dtype=str, encoding="utf-8")
 
 def _zh_en_mapping(df_raw: pd.DataFrame) -> Dict[str, str]:
     """
     由第一列(中文)與第二列(英文)建立對應：中文 -> 英文欄位名
     """
-    # 取出第 0 列 (中文欄位名稱) 與第 1 列 (英文欄位名稱)，轉成 list
-    zh = df_raw.iloc[0].tolist()
-    en = df_raw.iloc[1].tolist()
+    zh = df_raw.iloc[0].fillna('').tolist()
+    en = df_raw.iloc[1].fillna('').tolist()
+    
     mapping = {}
     for z, e in zip(zh, en):
-        # z.strip()：去掉頭尾的空白字元，避免 ' 總價元 ' 這種情況
-        # 在 if 條件中，strip() 也能用來檢查字串是否非空（空字串會變 False）
-        if isinstance(z, str) and isinstance(e, str) and z.strip() and e.strip():
-            # 雖然 zip(zh, en) 會把兩個 list 配對成 tuple，但 tuple 只能靠 index 查詢，不方便使用，因此改成 dict (mapping)，讓我們能用 key 直接查 value
-            mapping[z.strip()] = e.strip()
+        z_clean = str(z).strip()
+        e_clean = str(e).strip()
+        if z_clean and e_clean and z_clean != 'nan' and e_clean != 'nan':
+            mapping[z_clean] = e_clean
     return mapping
 
-_CN_NUM = {"零":0,"〇":0,"○":0,"一":1,"二":2,"兩":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9}
-_CN_UNIT = {"十":10}
-
-def _cn_numeral_to_int(s: str) -> int | None:
-    """
-    轉中文數字（常見格式：十三層、二十層、三十一層）為 int。
-    """
-    if not isinstance(s, str):
-        return None
+def _cn_numeral_to_int(s: str) -> int:
+    """轉中文數字為整數，失敗則回傳0"""
+    if not isinstance(s, str) or not s.strip():
+        return 0
     
-    # 將輸入字串清理成「純中文數字」：
-    # re.sub(r"[^\u4e00-\u9fff]", "", s)：移除所有非中文字元（只保留中文）
-    # .replace("層", "")：去掉「層」
-    t = re.sub(r"[^\u4e00-\u9fff]", "", s).replace("層","")
-    if not t:
-        return None
+    s = str(s).strip()
+    
+    # 處理中文數字
+    cn_num = {"零":0,"一":1,"二":2,"兩":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+    
+    # 移除「層」字
+    s = s.replace("層", "")
+    
+    # 在 dict 上使用 in：檢查 s 是否為 dict 的「完整 key」
+    # → 只有當 s 完全等於某個 key 時才會成立
+    if s in cn_num:
+        return cn_num[s]
+    
+    if s.startswith("十") and len(s) == 2:
+        return 10 + cn_num.get(s[1], 0)
+    
+    # 處理「X十」或「X十X」格式
+    # 在 str 上使用 in：檢查子字串是否存在於 s 之中
+    # → 只要 "十" 出現在 s 的任意位置就會成立（部分比對）
+    if "十" in s:
+        parts = s.split("十")
+        if len(parts) == 2:
+            # "十五" → ["", "五"]
+            # "二十" → ["二", ""]
+            # "二十三" → ["二", "三"]
+            left = cn_num.get(parts[0], 0) if parts[0] else 1
+            right = cn_num.get(parts[1], 0) if parts[1] else 0
+            return left * 10 + right
+    
+    return 0
 
-    total = 0
-    num = 0
-    unit_found = False
-    saw_any_valid = False   # 是否看過任何合法數字/單位
-    for ch in t:
-        if ch in _CN_NUM:
-            num = _CN_NUM[ch]
-            saw_any_valid = True
-        elif ch in _CN_UNIT:
-            unit_found = True
-            saw_any_valid = True
-            unit = _CN_UNIT[ch]
-            if num == 0:
-                total += unit
-            else:
-                total += num * unit
-            num = 0
-        else:
-            # 未知字，忽略
-            pass
-    total += num
-
-    # 若整串沒有任何合法字元，回 None；否則回 total
-    return total if saw_any_valid else None
-
-def read_csv_file(path: str,df_name: str) -> pd.DataFrame:
+def read_csv_file(path: str, df_name: str) -> pd.DataFrame:
     """
-    讀取 MOI CSV：第一列中文、第二列英文；以「第二列英文」設為欄位名。
-    並複製出題目需要的中文欄位（以便第 3 點用中文名過濾），加上 df_name，
-    並產生「總樓層數_數值」欄位（中文數字轉整數）。
+    讀取 MOI CSV，只保留需要的欄位
     """
     raw = _read_csv_with_utf8(path)
-    #shape: 看 DataFrame 的結構大小，回傳tuple(rows, cols)，shape[0]是列數，shape[1]是欄數
+    
     if raw is None or raw.shape[0] < 2:
         raise ValueError(f"CSV 結構異常：{path}")
     
     zh2en = _zh_en_mapping(raw)
-    #iloc: 根據位置取出資料，回傳DataFrame / Series / 值
-    en_header = raw.iloc[1].tolist()
-    df = raw.iloc[2:].copy()
-    # 這裡把第 2 列取出的英文標題 (en_header) 指定為真正的欄位名稱
-    df.columns = en_header
-
-    for c in df.columns:
-        df[c] = df[c].astype(str)
-
-    # 在 DataFrame 裡加一個新的欄位，名字叫做 "df_name"，裡面的值全部都填入變數 df_name
-    df["df_name"] = df_name
-
-    for cn in NEEDED_CN:
-        en = zh2en.get(cn)
-        if en and en in df.columns: 
-        # DataFrame 用 df["欄位名"] 存取欄位，不是列
-        # 這裡 cn 是中文欄位名（原本不存在 → 新增）
-        # en 是英文欄位名（已存在 → 資料來源）
-        # 效果：新增一個中文欄位，內容與英文欄位相同
-
-            df[cn] = df[en] 
+    
+    # 取出資料部分（跳過前兩列標題）
+    data_df = raw.iloc[2:].reset_index(drop=True)
+    
+    # 設定英文標題為欄位名（處理空值和無效值）
+    en_header_raw = raw.iloc[1].tolist()
+    en_header = []
+    for i, col in enumerate(en_header_raw):
+        #pd.isna(col) 檢查這個值是不是 缺失值
+        if pd.isna(col) or str(col).strip() == '' or str(col).strip() == 'nan':
+            en_header.append(f'col_{i}')
         else:
-            # 找不到就建空欄位，避免 KeyError
-            df[cn] = None
-
-    for col in ["總價元", "車位總價元", "交易筆棟數"]:
-        if col in df.columns:
-            # str.replace 預設 regex=True → 把模式當正則表達式解析
-            # 這裡加 regex=False 是明確指定「單純字串替換」，避免 "." "*" 等符號被誤解
-            # 最後用 pd.to_numeric 嘗試轉換為數值，(errors="coerce")代表轉換失敗則回傳 NaN 
-            df[col] = pd.to_numeric(df[col].str.replace(",", "", regex=False), errors="coerce")
-
-    # 樓層數字化
-    if "總樓層數" in df.columns:
-        # .apply(func) 會對 Series 中的每個元素執行指定函式，回傳新 Series
-        df["總樓層數_數值"] = df["總樓層數"].apply(_cn_numeral_to_int)
+            en_header.append(str(col).strip())
+    
+    seen = {}
+    unique_header = []
+    for col in en_header:
+        if col in seen:
+            seen[col] += 1
+            unique_header.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            unique_header.append(col)
+    
+    # 加上 [:len(data_df.columns)] 是為了避免欄位數超過實際 DataFrame 的欄數。
+    data_df.columns = unique_header[:len(data_df.columns)]
+    
+    # **關鍵優化：只保留需要的欄位**
+    result_data = {"df_name": df_name}
+    
+    for cn_field, field_type in REQUIRED_FIELDS.items():
+        en_field = zh2en.get(cn_field)
+        
+        if en_field and en_field in data_df.columns:
+            # .fillna('')把這欄裡的缺失值（NaN / None）填補成空字串 ''
+            raw_data = data_df[en_field].fillna('').astype(str)
+            
+            if field_type == "float":
+                
+                cleaned_data = raw_data.str.replace(',', '', regex=False)
+                cleaned_data = cleaned_data.replace(['', 'nan', 'None'], '0')
+                # errors="coerce" → 若遇到非法值（如 "abc", "N/A"），不丟出錯誤，而是轉成 NaN
+                result_data[cn_field] = pd.to_numeric(cleaned_data, errors='coerce').fillna(0.0)
+            else:
+                result_data[cn_field] = raw_data.replace(['nan', 'None'], '')
+        else:
+            # 如果原始資料中，REQUIRED_FIELDS欄位不存在，設定預設值
+            row_count = len(data_df)
+            if field_type == "float":
+                result_data[cn_field] = [0.0] * row_count
+            else:
+                result_data[cn_field] = [''] * row_count
+    
+    # 建立新的 DataFrame（只包含需要的欄位）
+    result_df = pd.DataFrame(result_data)
+    
+    # 處理樓層數轉換
+    if "總樓層數" in result_df.columns:
+        result_df["總樓層數_數值"] = result_df["總樓層數"].apply(_cn_numeral_to_int)
     else:
-        df["總樓層數_數值"] = None
-
-    return df
+        result_df["總樓層數_數值"] = 0
+    
+    return result_df
