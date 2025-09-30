@@ -1,5 +1,7 @@
 from __future__ import annotations
+import asyncio
 import os
+import time
 from typing import List
 import pandas as pd
 
@@ -10,7 +12,7 @@ from .parser_cleaner import read_csv_file
 from .combiner import combine_all, apply_filters, aggregate_counts, export_results
 from .sink_es import push_dataframe_to_es
 
-def run(all_seasons: bool = True) -> None:
+async def run(all_seasons: bool = True) -> None:
     """
     主流程：
       1) 產生任務清單（只含 X_lvr_land_X 主檔）
@@ -28,8 +30,9 @@ def run(all_seasons: bool = True) -> None:
     print(f"產生 {len(tasks)} 個任務")
 
     # 2) 下載
-    paths = download_tasks(tasks, base_dir=config.DATA_DIR)
-    print(f"下載了 {len(paths)} 個檔案")
+    t0 = time.perf_counter()
+    paths = await download_tasks(tasks, base_dir=config.DATA_DIR)
+    print(f"整個 fetcher.py 總耗時: {time.perf_counter() - t0:.2f} 秒")
 
     # 建 df_name 查表： (season, file_name) -> df_name
     dfname_map = {(t["season"], t["file_name"]): t["df_name"] for t in tasks}
@@ -112,4 +115,4 @@ def run(all_seasons: bool = True) -> None:
         return
 
 if __name__ == "__main__":
-    run(all_seasons=True)
+    asyncio.run(run(all_seasons=True))

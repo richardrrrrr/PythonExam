@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+import aiohttp
 from typing import Iterable, Dict, List
 from .config import BASE_URL, DATA_DIR, ensure_directories
 
@@ -19,27 +20,29 @@ def _write_bytes(path: str, content: bytes) -> None:
     with open(path, "wb") as f:
         f.write(content)
 
-def download_file(url: str, dest_path: str,
+async def download_file(url: str, dest_path: str,
                   *, timeout: int = DEFAULT_TIMEOUT,
                   max_retries: int = DEFAULT_RETRIES,
                   backoff: float = DEFAULT_BACKOFF) -> str:
     """下載單一檔案，含重試與回退。返回存檔路徑。"""
     last_err = None
     for attempt in range(max_retries):
-        try:
+        
+            async with aiohttp.ClientSession() as session:
             # stream=True 表示回應的內容（Response body）不會一次性全部下載進記憶體，而是邊接收邊讀取。
-            r = requests.get(url, stream=True, timeout=timeout, headers={"User-Agent":"Mozilla/5.0"})
-            r.raise_for_status()
-            content = r.content
-            _write_bytes(dest_path, content)
-            return dest_path
-        except Exception as e:
-            last_err = e
-            if attempt == max_retries - 1:
-                raise
-            time.sleep(backoff ** attempt)
+                async with session.get(url,ssl=False, timeout=timeout, headers={"User-Agent":"Mozilla/5.0"}) as resp:
+                    try:    
+                        resp.raise_for_status()
+                        content = await resp.read()
+                        _write_bytes(dest_path, content)
+                        return dest_path
+                    except Exception as e:
+                        last_err = e
+                        if attempt == max_retries - 1:
+                            raise
+                        time.sleep(backoff ** attempt)
 
-def download_tasks(tasks: Iterable[Dict], base_dir: str = DATA_DIR) -> List[str]:
+async def download_tasks(tasks: Iterable[Dict], base_dir: str = DATA_DIR) -> List[str]:
     """
     依 manifest 產生的 tasks 逐一下載到：
       {DATA_DIR}/{season}/{file_name}
@@ -55,7 +58,7 @@ def download_tasks(tasks: Iterable[Dict], base_dir: str = DATA_DIR) -> List[str]
         url = build_download_url(season, file_name)
         dest = os.path.join(base_dir, season, file_name)
         if not os.path.exists(dest):
-            download_file(url, dest)
+            await download_file(url, dest)
         saved.append(dest)
     return saved
 # 🧪 測試入口

@@ -106,7 +106,7 @@ BASE_URL=https://plvr.land.moi.gov.tw/DownloadSeason
 ### 4) 啟動 Elasticsearch + Kibana
 
 ```bash
-cd src/rec
+cd src
 docker compose -f docker-compose.yml up -d
 ```
 
