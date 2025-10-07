@@ -24,10 +24,8 @@ async def run(all_seasons: bool = True) -> None:
     config.ensure_directories()
 
     seasons = config.SEASONS if all_seasons else config.SEASONS[:1] 
-    print(f"測試季度：{seasons}")
     
     tasks = generate_tasks(seasons=seasons)
-    print(f"產生 {len(tasks)} 個任務")
 
     # 2) 下載
     t0 = time.perf_counter()
@@ -41,11 +39,9 @@ async def run(all_seasons: bool = True) -> None:
     dfs: List[pd.DataFrame] = []
     for i, p in enumerate(paths):
         try:
-            print(f"處理檔案 {i+1}/{len(paths)}: {p}")
             
             # 檢查檔案大小
             file_size = os.path.getsize(p)
-            print(f"  檔案大小: {file_size} bytes")
             
             
             file_name = os.path.basename(p)
@@ -68,7 +64,6 @@ async def run(all_seasons: bool = True) -> None:
             try:
                 with open(p, 'r', encoding='utf-8') as f:
                     first_lines = [f.readline() for _ in range(3)]
-                print(f"  檔案前3行內容: {first_lines}")
             except Exception as read_err:
                 print(f"  無法讀取檔案內容: {read_err}")
             continue
@@ -77,7 +72,6 @@ async def run(all_seasons: bool = True) -> None:
         print("錯誤：沒有成功讀取任何檔案")
         return
 
-    print(f"成功讀取 {len(dfs)} 個 DataFrame")
     
     # 在合併前再次檢查每個 DataFrame
     for i, df in enumerate(dfs):
